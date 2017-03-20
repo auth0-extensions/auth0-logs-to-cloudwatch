@@ -1,16 +1,16 @@
 "use npm"
 "use strict"
-const winston   = require('winston');
-const Auth0     = require('auth0');
-const async     = require('async');
-const moment    = require('moment');
+const winston = require('winston');
+const async = require('async');
+const moment = require('moment');
 const useragent = require('useragent');
-const express   = require('express');
-const Webtask   = require('webtask-tools');
-const app       = express();
+const express = require('express');
+const Webtask = require('webtask-tools');
+const app = express();
+const Request = require('request');
+const memoizer = require('lru-memoizer');
 
 const winstCwatch = require('winston-cloudwatch-transport');
-
 
 function lastLogCheckpoint(req, res) {
   let ctx = req.webtaskContext;
@@ -18,26 +18,16 @@ function lastLogCheckpoint(req, res) {
   let missing_settings = required_settings.filter((setting) => !ctx.data[setting]);
 
   if (missing_settings.length) {
-    return res.status(400).send({message: 'Missing settings: ' + missing_settings.join(', ')});
+    return res.status(400).send({ message: 'Missing settings: ' + missing_settings.join(', ') });
   }
 
   // If this is a scheduled task, we'll get the last log checkpoint from the previous run and continue from there.
-  req.webtaskContext.read('history', {}, function (err, data) {
-
+  req.webtaskContext.storage.get((err, data) => {
     let startCheckpointId = typeof data === 'undefined' ? null : data.checkpointId;
-
-    // Initialize both clients.
-    const auth0 = new Auth0({
-      domain: ctx.data.AUTH0_DOMAIN,
-      clientID: ctx.data.AUTH0_GLOBAL_CLIENT_ID,
-      clientSecret: ctx.data.AUTH0_GLOBAL_CLIENT_SECRET
-    });
-
-
 
     const logger = new winston.Logger({
       transports: [
-       new winstCwatch({
+              new winstCwatch({
     logGroupName: "auth0-pushp",
     logStreamName: "auth0-pushp-stream",
     awsAccessKeyId:"AKIAI2NS6FD5W7AL2EOQ",
@@ -50,27 +40,24 @@ function lastLogCheckpoint(req, res) {
     // Start the process.
     async.waterfall([
       (callback) => {
-        auth0.getAccessToken((err) => {
-          if (err) {
-            console.log('Error authenticating:', err);
-          }
-          return callback(err);
-        });
-      },
-      (callback) => {
         const getLogs = (context) => {
-          console.log(`Downloading logs from: ${context.checkpointId || 'Start'}.`);
+          console.log(`Logs from: ${context.checkpointId || 'Start'}.`);
+
+          let take = Number.parseInt(ctx.data.BATCH_SIZE);
+
+          take = take > 100 ? 100 : take;
 
           context.logs = context.logs || [];
-          auth0.getLogs({take: 200, from: context.checkpointId}, (err, logs) => {
+
+          getLogsFromAuth0(req.webtaskContext.data.AUTH0_DOMAIN, req.access_token, take, context.checkpointId, (logs, err) => {
             if (err) {
+              console.log('Error getting logs from Auth0', err);
               return callback(err);
             }
 
             if (logs && logs.length) {
               logs.forEach((l) => context.logs.push(l));
               context.checkpointId = context.logs[context.logs.length - 1]._id;
-              return setImmediate(() => getLogs(context));
             }
 
             console.log(`Total logs: ${context.logs.length}.`);
@@ -78,7 +65,7 @@ function lastLogCheckpoint(req, res) {
           });
         };
 
-        getLogs({checkpointId: startCheckpointId});
+        getLogs({ checkpointId: startCheckpointId });
       },
       (context, callback) => {
         const min_log_level = parseInt(ctx.data.LOG_LEVEL) || 0;
@@ -100,12 +87,6 @@ function lastLogCheckpoint(req, res) {
           .filter(log_matches_level)
           .filter(log_matches_types);
 
-        console.log(`Filtered logs on log level '${min_log_level}': ${context.logs.length}.`);
-
-        if (ctx.data.LOG_TYPES) {
-          console.log(`Filtered logs on '${ctx.data.LOG_TYPES}': ${context.logs.length}.`);
-        }
-
         callback(null, context);
       },
       (context, callback) => {
@@ -116,9 +97,8 @@ function lastLogCheckpoint(req, res) {
           const url = `${date.format('YYYY/MM/DD')}/${date.format('HH')}/${log._id}.json`;
           console.log(`Uploading ${url}.`);
 
+          // papertrail here...
           logger.info(JSON.stringify(log), cb);
-
-
         }, (err) => {
           if (err) {
             return callback(err);
@@ -132,8 +112,11 @@ function lastLogCheckpoint(req, res) {
       if (err) {
         console.log('Job failed.');
 
-        return req.webtaskContext.write('history', JSON.stringify({checkpointId: startCheckpointId}), {}, function (error) {
-          if (error) return res.status(500).send(error);
+        return req.webtaskContext.storage.set({ checkpointId: startCheckpointId }, { force: 1 }, (error) => {
+          if (error) {
+            console.log('Error storing startCheckpoint', error);
+            return res.status(500).send({error: error});
+          }
 
           res.status(500).send({
             error: err
@@ -142,11 +125,15 @@ function lastLogCheckpoint(req, res) {
       }
 
       console.log('Job complete.');
-      return req.webtaskContext.write('history', JSON.stringify({
+
+      return req.webtaskContext.storage.set({
         checkpointId: context.checkpointId,
         totalLogsProcessed: context.logs.length
-      }), {}, function (error) {
-        if (error) return res.status(500).send(error);
+      }, { force: 1 }, (error) => {
+        if (error) {
+          console.log('Error storing checkpoint', error);
+          return res.status(500).send({error: error});
+        }
 
         res.sendStatus(200);
       });
@@ -164,8 +151,16 @@ const logTypes = {
     event: 'Success Exchange',
     level: 1 // Info
   },
+  'seccft': {
+    event: 'Success Exchange (Client Credentials)',
+    level: 1 // Info
+  },
   'feacft': {
     event: 'Failed Exchange',
+    level: 3 // Error
+  },
+  'feccft': {
+    event: 'Failed Exchange (Client Credentials)',
     level: 3 // Error
   },
   'f': {
@@ -309,10 +304,108 @@ const logTypes = {
   'fdu': {
     event: 'Failed User Deletion',
     level: 3 // Error
+  },
+  'fapi': {
+    event: 'Failed API Operation',
+    level: 3 // Error
+  },
+  'limit_wc': {
+    event: 'Blocked Account',
+    level: 3 // Error
+  },
+  'limit_mu': {
+    event: 'Blocked IP Address',
+    level: 3 // Error
+  },
+  'slo': {
+    event: 'Success Logout',
+    level: 1 // Info
+  },
+  'flo': {
+    event: ' Failed Logout',
+    level: 3 // Error
+  },
+  'sd': {
+    event: 'Success Delegation',
+    level: 1 // Info
+  },
+  'fd': {
+    event: 'Failed Delegation',
+    level: 3 // Error
   }
 };
+
+function getLogsFromAuth0 (domain, token, take, from, cb) {
+  var url = `https://${domain}/api/v2/logs`;
+
+  Request({
+    method: 'GET',
+    url: url,
+    json: true,
+    qs: {
+      take: take,
+      from: from,
+      sort: 'date:1',
+      per_page: take
+    },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json'
+    }
+  }, (err, res, body) => {
+    if (err) {
+      console.log('Error getting logs', err);
+      cb(null, err);
+    } else {
+      cb(body);
+    }
+  });
+}
+
+const getTokenCached = memoizer({
+  load: (apiUrl, audience, clientId, clientSecret, cb) => {
+    Request({
+      method: 'POST',
+      url: apiUrl,
+      json: true,
+      body: {
+        audience: audience,
+        grant_type: 'client_credentials',
+        client_id: clientId,
+        client_secret: clientSecret
+      }
+    }, (err, res, body) => {
+      if (err) {
+        cb(null, err);
+      } else {
+        cb(body.access_token);
+      }
+    });
+  },
+  hash: (apiUrl) => apiUrl,
+  max: 100,
+  maxAge: 1000 * 60 * 60
+});
+
+app.use(function (req, res, next) {
+  var apiUrl       = `https://${req.webtaskContext.data.AUTH0_DOMAIN}/oauth/token`;
+  var audience     = `https://${req.webtaskContext.data.AUTH0_DOMAIN}/api/v2/`;
+  var clientId     = req.webtaskContext.data.AUTH0_CLIENT_ID;
+  var clientSecret = req.webtaskContext.data.AUTH0_CLIENT_SECRET;
+
+  getTokenCached(apiUrl, audience, clientId, clientSecret, function (access_token, err) {
+    if (err) {
+      console.log('Error getting access_token', err);
+      return next(err);
+    }
+
+    req.access_token = access_token;
+    next();
+  });
+});
 
 app.get('/', lastLogCheckpoint);
 app.post('/', lastLogCheckpoint);
 
 module.exports = Webtask.fromExpress(app);
+

@@ -45,19 +45,24 @@ module.exports =
 /* 0 */
 /***/ function(module, exports, __webpack_require__) {
 
-	/* WEBPACK VAR INJECTION */(function(setImmediate) {"use npm";
+	"use npm";
 	"use strict";
 
-	var winston = __webpack_require__(4);
-	var Auth0 = __webpack_require__(5);
-	var async = __webpack_require__(6);
-	var moment = __webpack_require__(7);
-	var useragent = __webpack_require__(8);
-	var express = __webpack_require__(9);
-	var Webtask = __webpack_require__(10);
-	var app = express();
+	var _logTypes;
 
-	var winstCwatch = __webpack_require__(21);
+	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
+	var winston = __webpack_require__(1);
+	var async = __webpack_require__(2);
+	var moment = __webpack_require__(3);
+	var useragent = __webpack_require__(4);
+	var express = __webpack_require__(5);
+	var Webtask = __webpack_require__(6);
+	var app = express();
+	var Request = __webpack_require__(16);
+	var memoizer = __webpack_require__(17);
+
+	var winstCwatch = __webpack_require__(18);
 
 	function lastLogCheckpoint(req, res) {
 	  var ctx = req.webtaskContext;
@@ -71,16 +76,8 @@ module.exports =
 	  }
 
 	  // If this is a scheduled task, we'll get the last log checkpoint from the previous run and continue from there.
-	  req.webtaskContext.read('history', {}, function (err, data) {
-
+	  req.webtaskContext.storage.get(function (err, data) {
 	    var startCheckpointId = typeof data === 'undefined' ? null : data.checkpointId;
-
-	    // Initialize both clients.
-	    var auth0 = new Auth0({
-	      domain: ctx.data.AUTH0_DOMAIN,
-	      clientID: ctx.data.AUTH0_GLOBAL_CLIENT_ID,
-	      clientSecret: ctx.data.AUTH0_GLOBAL_CLIENT_SECRET
-	    });
 
 	    var logger = new winston.Logger({
 	      transports: [new winstCwatch({
@@ -94,19 +91,18 @@ module.exports =
 
 	    // Start the process.
 	    async.waterfall([function (callback) {
-	      auth0.getAccessToken(function (err) {
-	        if (err) {
-	          console.log('Error authenticating:', err);
-	        }
-	        return callback(err);
-	      });
-	    }, function (callback) {
 	      var getLogs = function getLogs(context) {
-	        console.log("Downloading logs from: " + (context.checkpointId || 'Start') + ".");
+	        console.log("Logs from: " + (context.checkpointId || 'Start') + ".");
+
+	        var take = Number.parseInt(ctx.data.BATCH_SIZE);
+
+	        take = take > 100 ? 100 : take;
 
 	        context.logs = context.logs || [];
-	        auth0.getLogs({ take: 200, from: context.checkpointId }, function (err, logs) {
+
+	        getLogsFromAuth0(req.webtaskContext.data.AUTH0_DOMAIN, req.access_token, take, context.checkpointId, function (logs, err) {
 	          if (err) {
+	            console.log('Error getting logs from Auth0', err);
 	            return callback(err);
 	          }
 
@@ -115,9 +111,6 @@ module.exports =
 	              return context.logs.push(l);
 	            });
 	            context.checkpointId = context.logs[context.logs.length - 1]._id;
-	            return setImmediate(function () {
-	              return getLogs(context);
-	            });
 	          }
 
 	          console.log("Total logs: " + context.logs.length + ".");
@@ -145,12 +138,6 @@ module.exports =
 	        return l.type !== 'sapi' && l.type !== 'fapi';
 	      }).filter(log_matches_level).filter(log_matches_types);
 
-	      console.log("Filtered logs on log level '" + min_log_level + "': " + context.logs.length + ".");
-
-	      if (ctx.data.LOG_TYPES) {
-	        console.log("Filtered logs on '" + ctx.data.LOG_TYPES + "': " + context.logs.length + ".");
-	      }
-
 	      callback(null, context);
 	    }, function (context, callback) {
 	      console.log('Uploading blobs...');
@@ -160,6 +147,7 @@ module.exports =
 	        var url = date.format('YYYY/MM/DD') + "/" + date.format('HH') + "/" + log._id + ".json";
 	        console.log("Uploading " + url + ".");
 
+	        // papertrail here...
 	        logger.info(JSON.stringify(log), cb);
 	      }, function (err) {
 	        if (err) {
@@ -173,8 +161,11 @@ module.exports =
 	      if (err) {
 	        console.log('Job failed.');
 
-	        return req.webtaskContext.write('history', JSON.stringify({ checkpointId: startCheckpointId }), {}, function (error) {
-	          if (error) return res.status(500).send(error);
+	        return req.webtaskContext.storage.set({ checkpointId: startCheckpointId }, { force: 1 }, function (error) {
+	          if (error) {
+	            console.log('Error storing startCheckpoint', error);
+	            return res.status(500).send({ error: error });
+	          }
 
 	          res.status(500).send({
 	            error: err
@@ -183,11 +174,15 @@ module.exports =
 	      }
 
 	      console.log('Job complete.');
-	      return req.webtaskContext.write('history', JSON.stringify({
+
+	      return req.webtaskContext.storage.set({
 	        checkpointId: context.checkpointId,
 	        totalLogsProcessed: context.logs.length
-	      }), {}, function (error) {
-	        if (error) return res.status(500).send(error);
+	      }, { force: 1 }, function (error) {
+	        if (error) {
+	          console.log('Error storing checkpoint', error);
+	          return res.status(500).send({ error: error });
+	        }
 
 	        res.sendStatus(200);
 	      });
@@ -195,7 +190,7 @@ module.exports =
 	  });
 	}
 
-	var logTypes = {
+	var logTypes = (_logTypes = {
 	  's': {
 	    event: 'Success Login',
 	    level: 1 // Info
@@ -204,8 +199,16 @@ module.exports =
 	    event: 'Success Exchange',
 	    level: 1 // Info
 	  },
+	  'seccft': {
+	    event: 'Success Exchange (Client Credentials)',
+	    level: 1 // Info
+	  },
 	  'feacft': {
 	    event: 'Failed Exchange',
+	    level: 3 // Error
+	  },
+	  'feccft': {
+	    event: 'Failed Exchange (Client Credentials)',
 	    level: 3 // Error
 	  },
 	  'f': {
@@ -350,493 +353,140 @@ module.exports =
 	    event: 'Failed User Deletion',
 	    level: 3 // Error
 	  }
-	};
+	}, _defineProperty(_logTypes, "fapi", {
+	  event: 'Failed API Operation',
+	  level: 3 // Error
+	}), _defineProperty(_logTypes, "limit_wc", {
+	  event: 'Blocked Account',
+	  level: 3 // Error
+	}), _defineProperty(_logTypes, 'limit_mu', {
+	  event: 'Blocked IP Address',
+	  level: 3 // Error
+	}), _defineProperty(_logTypes, 'slo', {
+	  event: 'Success Logout',
+	  level: 1 // Info
+	}), _defineProperty(_logTypes, 'flo', {
+	  event: ' Failed Logout',
+	  level: 3 // Error
+	}), _defineProperty(_logTypes, 'sd', {
+	  event: 'Success Delegation',
+	  level: 1 // Info
+	}), _defineProperty(_logTypes, 'fd', {
+	  event: 'Failed Delegation',
+	  level: 3 // Error
+	}), _logTypes);
+
+	function getLogsFromAuth0(domain, token, take, from, cb) {
+	  var url = "https://" + domain + "/api/v2/logs";
+
+	  Request({
+	    method: 'GET',
+	    url: url,
+	    json: true,
+	    qs: {
+	      take: take,
+	      from: from,
+	      sort: 'date:1',
+	      per_page: take
+	    },
+	    headers: {
+	      Authorization: "Bearer " + token,
+	      Accept: 'application/json'
+	    }
+	  }, function (err, res, body) {
+	    if (err) {
+	      console.log('Error getting logs', err);
+	      cb(null, err);
+	    } else {
+	      cb(body);
+	    }
+	  });
+	}
+
+	var getTokenCached = memoizer({
+	  load: function load(apiUrl, audience, clientId, clientSecret, cb) {
+	    Request({
+	      method: 'POST',
+	      url: apiUrl,
+	      json: true,
+	      body: {
+	        audience: audience,
+	        grant_type: 'client_credentials',
+	        client_id: clientId,
+	        client_secret: clientSecret
+	      }
+	    }, function (err, res, body) {
+	      if (err) {
+	        cb(null, err);
+	      } else {
+	        cb(body.access_token);
+	      }
+	    });
+	  },
+	  hash: function hash(apiUrl) {
+	    return apiUrl;
+	  },
+	  max: 100,
+	  maxAge: 1000 * 60 * 60
+	});
+
+	app.use(function (req, res, next) {
+	  var apiUrl = "https://" + req.webtaskContext.data.AUTH0_DOMAIN + "/oauth/token";
+	  var audience = "https://" + req.webtaskContext.data.AUTH0_DOMAIN + "/api/v2/";
+	  var clientId = req.webtaskContext.data.AUTH0_CLIENT_ID;
+	  var clientSecret = req.webtaskContext.data.AUTH0_CLIENT_SECRET;
+
+	  getTokenCached(apiUrl, audience, clientId, clientSecret, function (access_token, err) {
+	    if (err) {
+	      console.log('Error getting access_token', err);
+	      return next(err);
+	    }
+
+	    req.access_token = access_token;
+	    next();
+	  });
+	});
 
 	app.get('/', lastLogCheckpoint);
 	app.post('/', lastLogCheckpoint);
 
 	module.exports = Webtask.fromExpress(app);
-	/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(1).setImmediate))
 
 /***/ },
 /* 1 */
-/***/ function(module, exports, __webpack_require__) {
-
-	var apply = Function.prototype.apply;
-
-	// DOM APIs, for completeness
-
-	exports.setTimeout = function() {
-	  return new Timeout(apply.call(setTimeout, window, arguments), clearTimeout);
-	};
-	exports.setInterval = function() {
-	  return new Timeout(apply.call(setInterval, window, arguments), clearInterval);
-	};
-	exports.clearTimeout =
-	exports.clearInterval = function(timeout) {
-	  if (timeout) {
-	    timeout.close();
-	  }
-	};
-
-	function Timeout(id, clearFn) {
-	  this._id = id;
-	  this._clearFn = clearFn;
-	}
-	Timeout.prototype.unref = Timeout.prototype.ref = function() {};
-	Timeout.prototype.close = function() {
-	  this._clearFn.call(window, this._id);
-	};
-
-	// Does not start the time, just sets up the members needed.
-	exports.enroll = function(item, msecs) {
-	  clearTimeout(item._idleTimeoutId);
-	  item._idleTimeout = msecs;
-	};
-
-	exports.unenroll = function(item) {
-	  clearTimeout(item._idleTimeoutId);
-	  item._idleTimeout = -1;
-	};
-
-	exports._unrefActive = exports.active = function(item) {
-	  clearTimeout(item._idleTimeoutId);
-
-	  var msecs = item._idleTimeout;
-	  if (msecs >= 0) {
-	    item._idleTimeoutId = setTimeout(function onTimeout() {
-	      if (item._onTimeout)
-	        item._onTimeout();
-	    }, msecs);
-	  }
-	};
-
-	// setimmediate attaches itself to the global object
-	__webpack_require__(2);
-	exports.setImmediate = setImmediate;
-	exports.clearImmediate = clearImmediate;
-
-
-/***/ },
-/* 2 */
-/***/ function(module, exports, __webpack_require__) {
-
-	/* WEBPACK VAR INJECTION */(function(global, process) {(function (global, undefined) {
-	    "use strict";
-
-	    if (global.setImmediate) {
-	        return;
-	    }
-
-	    var nextHandle = 1; // Spec says greater than zero
-	    var tasksByHandle = {};
-	    var currentlyRunningATask = false;
-	    var doc = global.document;
-	    var registerImmediate;
-
-	    function setImmediate(callback) {
-	      // Callback can either be a function or a string
-	      if (typeof callback !== "function") {
-	        callback = new Function("" + callback);
-	      }
-	      // Copy function arguments
-	      var args = new Array(arguments.length - 1);
-	      for (var i = 0; i < args.length; i++) {
-	          args[i] = arguments[i + 1];
-	      }
-	      // Store and register the task
-	      var task = { callback: callback, args: args };
-	      tasksByHandle[nextHandle] = task;
-	      registerImmediate(nextHandle);
-	      return nextHandle++;
-	    }
-
-	    function clearImmediate(handle) {
-	        delete tasksByHandle[handle];
-	    }
-
-	    function run(task) {
-	        var callback = task.callback;
-	        var args = task.args;
-	        switch (args.length) {
-	        case 0:
-	            callback();
-	            break;
-	        case 1:
-	            callback(args[0]);
-	            break;
-	        case 2:
-	            callback(args[0], args[1]);
-	            break;
-	        case 3:
-	            callback(args[0], args[1], args[2]);
-	            break;
-	        default:
-	            callback.apply(undefined, args);
-	            break;
-	        }
-	    }
-
-	    function runIfPresent(handle) {
-	        // From the spec: "Wait until any invocations of this algorithm started before this one have completed."
-	        // So if we're currently running a task, we'll need to delay this invocation.
-	        if (currentlyRunningATask) {
-	            // Delay by doing a setTimeout. setImmediate was tried instead, but in Firefox 7 it generated a
-	            // "too much recursion" error.
-	            setTimeout(runIfPresent, 0, handle);
-	        } else {
-	            var task = tasksByHandle[handle];
-	            if (task) {
-	                currentlyRunningATask = true;
-	                try {
-	                    run(task);
-	                } finally {
-	                    clearImmediate(handle);
-	                    currentlyRunningATask = false;
-	                }
-	            }
-	        }
-	    }
-
-	    function installNextTickImplementation() {
-	        registerImmediate = function(handle) {
-	            process.nextTick(function () { runIfPresent(handle); });
-	        };
-	    }
-
-	    function canUsePostMessage() {
-	        // The test against `importScripts` prevents this implementation from being installed inside a web worker,
-	        // where `global.postMessage` means something completely different and can't be used for this purpose.
-	        if (global.postMessage && !global.importScripts) {
-	            var postMessageIsAsynchronous = true;
-	            var oldOnMessage = global.onmessage;
-	            global.onmessage = function() {
-	                postMessageIsAsynchronous = false;
-	            };
-	            global.postMessage("", "*");
-	            global.onmessage = oldOnMessage;
-	            return postMessageIsAsynchronous;
-	        }
-	    }
-
-	    function installPostMessageImplementation() {
-	        // Installs an event handler on `global` for the `message` event: see
-	        // * https://developer.mozilla.org/en/DOM/window.postMessage
-	        // * http://www.whatwg.org/specs/web-apps/current-work/multipage/comms.html#crossDocumentMessages
-
-	        var messagePrefix = "setImmediate$" + Math.random() + "$";
-	        var onGlobalMessage = function(event) {
-	            if (event.source === global &&
-	                typeof event.data === "string" &&
-	                event.data.indexOf(messagePrefix) === 0) {
-	                runIfPresent(+event.data.slice(messagePrefix.length));
-	            }
-	        };
-
-	        if (global.addEventListener) {
-	            global.addEventListener("message", onGlobalMessage, false);
-	        } else {
-	            global.attachEvent("onmessage", onGlobalMessage);
-	        }
-
-	        registerImmediate = function(handle) {
-	            global.postMessage(messagePrefix + handle, "*");
-	        };
-	    }
-
-	    function installMessageChannelImplementation() {
-	        var channel = new MessageChannel();
-	        channel.port1.onmessage = function(event) {
-	            var handle = event.data;
-	            runIfPresent(handle);
-	        };
-
-	        registerImmediate = function(handle) {
-	            channel.port2.postMessage(handle);
-	        };
-	    }
-
-	    function installReadyStateChangeImplementation() {
-	        var html = doc.documentElement;
-	        registerImmediate = function(handle) {
-	            // Create a <script> element; its readystatechange event will be fired asynchronously once it is inserted
-	            // into the document. Do so, thus queuing up the task. Remember to clean up once it's been called.
-	            var script = doc.createElement("script");
-	            script.onreadystatechange = function () {
-	                runIfPresent(handle);
-	                script.onreadystatechange = null;
-	                html.removeChild(script);
-	                script = null;
-	            };
-	            html.appendChild(script);
-	        };
-	    }
-
-	    function installSetTimeoutImplementation() {
-	        registerImmediate = function(handle) {
-	            setTimeout(runIfPresent, 0, handle);
-	        };
-	    }
-
-	    // If supported, we should attach to the prototype of global, since that is where setTimeout et al. live.
-	    var attachTo = Object.getPrototypeOf && Object.getPrototypeOf(global);
-	    attachTo = attachTo && attachTo.setTimeout ? attachTo : global;
-
-	    // Don't get fooled by e.g. browserify environments.
-	    if ({}.toString.call(global.process) === "[object process]") {
-	        // For Node.js before 0.9
-	        installNextTickImplementation();
-
-	    } else if (canUsePostMessage()) {
-	        // For non-IE10 modern browsers
-	        installPostMessageImplementation();
-
-	    } else if (global.MessageChannel) {
-	        // For web workers, where supported
-	        installMessageChannelImplementation();
-
-	    } else if (doc && "onreadystatechange" in doc.createElement("script")) {
-	        // For IE 6–8
-	        installReadyStateChangeImplementation();
-
-	    } else {
-	        // For older browsers
-	        installSetTimeoutImplementation();
-	    }
-
-	    attachTo.setImmediate = setImmediate;
-	    attachTo.clearImmediate = clearImmediate;
-	}(typeof self === "undefined" ? typeof global === "undefined" ? this : global : self));
-
-	/* WEBPACK VAR INJECTION */}.call(exports, (function() { return this; }()), __webpack_require__(3)))
-
-/***/ },
-/* 3 */
-/***/ function(module, exports) {
-
-	// shim for using process in browser
-	var process = module.exports = {};
-
-	// cached from whatever global is present so that test runners that stub it
-	// don't break things.  But we need to wrap it in a try catch in case it is
-	// wrapped in strict mode code which doesn't define any globals.  It's inside a
-	// function because try/catches deoptimize in certain engines.
-
-	var cachedSetTimeout;
-	var cachedClearTimeout;
-
-	function defaultSetTimout() {
-	    throw new Error('setTimeout has not been defined');
-	}
-	function defaultClearTimeout () {
-	    throw new Error('clearTimeout has not been defined');
-	}
-	(function () {
-	    try {
-	        if (typeof setTimeout === 'function') {
-	            cachedSetTimeout = setTimeout;
-	        } else {
-	            cachedSetTimeout = defaultSetTimout;
-	        }
-	    } catch (e) {
-	        cachedSetTimeout = defaultSetTimout;
-	    }
-	    try {
-	        if (typeof clearTimeout === 'function') {
-	            cachedClearTimeout = clearTimeout;
-	        } else {
-	            cachedClearTimeout = defaultClearTimeout;
-	        }
-	    } catch (e) {
-	        cachedClearTimeout = defaultClearTimeout;
-	    }
-	} ())
-	function runTimeout(fun) {
-	    if (cachedSetTimeout === setTimeout) {
-	        //normal enviroments in sane situations
-	        return setTimeout(fun, 0);
-	    }
-	    // if setTimeout wasn't available but was latter defined
-	    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
-	        cachedSetTimeout = setTimeout;
-	        return setTimeout(fun, 0);
-	    }
-	    try {
-	        // when when somebody has screwed with setTimeout but no I.E. maddness
-	        return cachedSetTimeout(fun, 0);
-	    } catch(e){
-	        try {
-	            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
-	            return cachedSetTimeout.call(null, fun, 0);
-	        } catch(e){
-	            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
-	            return cachedSetTimeout.call(this, fun, 0);
-	        }
-	    }
-
-
-	}
-	function runClearTimeout(marker) {
-	    if (cachedClearTimeout === clearTimeout) {
-	        //normal enviroments in sane situations
-	        return clearTimeout(marker);
-	    }
-	    // if clearTimeout wasn't available but was latter defined
-	    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
-	        cachedClearTimeout = clearTimeout;
-	        return clearTimeout(marker);
-	    }
-	    try {
-	        // when when somebody has screwed with setTimeout but no I.E. maddness
-	        return cachedClearTimeout(marker);
-	    } catch (e){
-	        try {
-	            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
-	            return cachedClearTimeout.call(null, marker);
-	        } catch (e){
-	            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
-	            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
-	            return cachedClearTimeout.call(this, marker);
-	        }
-	    }
-
-
-
-	}
-	var queue = [];
-	var draining = false;
-	var currentQueue;
-	var queueIndex = -1;
-
-	function cleanUpNextTick() {
-	    if (!draining || !currentQueue) {
-	        return;
-	    }
-	    draining = false;
-	    if (currentQueue.length) {
-	        queue = currentQueue.concat(queue);
-	    } else {
-	        queueIndex = -1;
-	    }
-	    if (queue.length) {
-	        drainQueue();
-	    }
-	}
-
-	function drainQueue() {
-	    if (draining) {
-	        return;
-	    }
-	    var timeout = runTimeout(cleanUpNextTick);
-	    draining = true;
-
-	    var len = queue.length;
-	    while(len) {
-	        currentQueue = queue;
-	        queue = [];
-	        while (++queueIndex < len) {
-	            if (currentQueue) {
-	                currentQueue[queueIndex].run();
-	            }
-	        }
-	        queueIndex = -1;
-	        len = queue.length;
-	    }
-	    currentQueue = null;
-	    draining = false;
-	    runClearTimeout(timeout);
-	}
-
-	process.nextTick = function (fun) {
-	    var args = new Array(arguments.length - 1);
-	    if (arguments.length > 1) {
-	        for (var i = 1; i < arguments.length; i++) {
-	            args[i - 1] = arguments[i];
-	        }
-	    }
-	    queue.push(new Item(fun, args));
-	    if (queue.length === 1 && !draining) {
-	        runTimeout(drainQueue);
-	    }
-	};
-
-	// v8 likes predictible objects
-	function Item(fun, array) {
-	    this.fun = fun;
-	    this.array = array;
-	}
-	Item.prototype.run = function () {
-	    this.fun.apply(null, this.array);
-	};
-	process.title = 'browser';
-	process.browser = true;
-	process.env = {};
-	process.argv = [];
-	process.version = ''; // empty string to avoid regexp issues
-	process.versions = {};
-
-	function noop() {}
-
-	process.on = noop;
-	process.addListener = noop;
-	process.once = noop;
-	process.off = noop;
-	process.removeListener = noop;
-	process.removeAllListeners = noop;
-	process.emit = noop;
-
-	process.binding = function (name) {
-	    throw new Error('process.binding is not supported');
-	};
-
-	process.cwd = function () { return '/' };
-	process.chdir = function (dir) {
-	    throw new Error('process.chdir is not supported');
-	};
-	process.umask = function() { return 0; };
-
-
-/***/ },
-/* 4 */
 /***/ function(module, exports) {
 
 	module.exports = require("winston");
 
 /***/ },
-/* 5 */
-/***/ function(module, exports) {
-
-	module.exports = require("auth0@0.8.2");
-
-/***/ },
-/* 6 */
+/* 2 */
 /***/ function(module, exports) {
 
 	module.exports = require("async");
 
 /***/ },
-/* 7 */
+/* 3 */
 /***/ function(module, exports) {
 
 	module.exports = require("moment");
 
 /***/ },
-/* 8 */
+/* 4 */
 /***/ function(module, exports) {
 
 	module.exports = require("useragent");
 
 /***/ },
-/* 9 */
+/* 5 */
 /***/ function(module, exports) {
 
 	module.exports = require("express");
 
 /***/ },
-/* 10 */
+/* 6 */
 /***/ function(module, exports, __webpack_require__) {
 
-	exports.auth0 = __webpack_require__(11);
+	exports.auth0 = __webpack_require__(7);
 	exports.fromConnect = exports.fromExpress = fromConnect;
 	exports.fromHapi = fromHapi;
 	exports.fromServer = exports.fromRestify = fromServer;
@@ -921,7 +571,7 @@ module.exports =
 
 
 	    function readNotAvailable(path, options, cb) {
-	        var Boom = __webpack_require__(19);
+	        var Boom = __webpack_require__(15);
 
 	        if (typeof options === 'function') {
 	            cb = options;
@@ -932,8 +582,8 @@ module.exports =
 	    }
 
 	    function readFromPath(path, options, cb) {
-	        var Boom = __webpack_require__(19);
-	        var Request = __webpack_require__(20);
+	        var Boom = __webpack_require__(15);
+	        var Request = __webpack_require__(16);
 
 	        if (typeof options === 'function') {
 	            cb = options;
@@ -956,7 +606,7 @@ module.exports =
 	    }
 
 	    function writeNotAvailable(path, data, options, cb) {
-	        var Boom = __webpack_require__(19);
+	        var Boom = __webpack_require__(15);
 
 	        if (typeof options === 'function') {
 	            cb = options;
@@ -967,8 +617,8 @@ module.exports =
 	    }
 
 	    function writeToPath(path, data, options, cb) {
-	        var Boom = __webpack_require__(19);
-	        var Request = __webpack_require__(20);
+	        var Boom = __webpack_require__(15);
+	        var Request = __webpack_require__(16);
 
 	        if (typeof options === 'function') {
 	            cb = options;
@@ -992,14 +642,14 @@ module.exports =
 
 
 /***/ },
-/* 11 */
+/* 7 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var url = __webpack_require__(12);
-	var error = __webpack_require__(13);
-	var handleAppEndpoint = __webpack_require__(14);
-	var handleLogin = __webpack_require__(16);
-	var handleCallback = __webpack_require__(17);
+	var url = __webpack_require__(8);
+	var error = __webpack_require__(9);
+	var handleAppEndpoint = __webpack_require__(10);
+	var handleLogin = __webpack_require__(12);
+	var handleCallback = __webpack_require__(13);
 
 	module.exports = function (webtask, options) {
 	    if (typeof webtask !== 'function' || webtask.length !== 3) {
@@ -1205,13 +855,13 @@ module.exports =
 
 
 /***/ },
-/* 12 */
+/* 8 */
 /***/ function(module, exports) {
 
 	module.exports = require("url");
 
 /***/ },
-/* 13 */
+/* 9 */
 /***/ function(module, exports) {
 
 	module.exports = function (err, res) {
@@ -1224,10 +874,10 @@ module.exports =
 
 
 /***/ },
-/* 14 */
+/* 10 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var error = __webpack_require__(13);
+	var error = __webpack_require__(9);
 
 	module.exports = function (webtask, options, ctx, req, res, routingInfo) {
 	    return options.exclude && options.exclude(ctx, req, routingInfo.appPath)
@@ -1256,7 +906,7 @@ module.exports =
 	        }
 
 	        try {
-	            ctx.user = req.user = __webpack_require__(15).verify(apiKey, secret);
+	            ctx.user = req.user = __webpack_require__(11).verify(apiKey, secret);
 	        }
 	        catch (e) {
 	            return options.loginError({
@@ -1288,16 +938,16 @@ module.exports =
 
 
 /***/ },
-/* 15 */
+/* 11 */
 /***/ function(module, exports) {
 
 	module.exports = require("jsonwebtoken");
 
 /***/ },
-/* 16 */
+/* 12 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var error = __webpack_require__(13);
+	var error = __webpack_require__(9);
 
 	module.exports = function(options, ctx, req, res, routingInfo) {
 	    var authParams = {
@@ -1342,10 +992,10 @@ module.exports =
 
 
 /***/ },
-/* 17 */
+/* 13 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var error = __webpack_require__(13);
+	var error = __webpack_require__(9);
 
 	module.exports = function (options, ctx, req, res, routingInfo) {
 	    if (!ctx.query.code) {
@@ -1369,7 +1019,7 @@ module.exports =
 	        }, res);
 	    }
 
-	    return __webpack_require__(18)
+	    return __webpack_require__(14)
 	        .post('https://' + authParams.domain + '/oauth/token')
 	        .type('form')
 	        .send({
@@ -1395,7 +1045,7 @@ module.exports =
 	        });
 
 	    function issueApiKey(id_token) {
-	        var jwt = __webpack_require__(15);
+	        var jwt = __webpack_require__(11);
 	        var claims;
 	        try {
 	            claims = jwt.decode(id_token);
@@ -1431,33 +1081,39 @@ module.exports =
 
 
 /***/ },
-/* 18 */
+/* 14 */
 /***/ function(module, exports) {
 
 	module.exports = require("superagent");
 
 /***/ },
-/* 19 */
+/* 15 */
 /***/ function(module, exports) {
 
 	module.exports = require("boom");
 
 /***/ },
-/* 20 */
+/* 16 */
 /***/ function(module, exports) {
 
 	module.exports = require("request");
 
 /***/ },
-/* 21 */
+/* 17 */
+/***/ function(module, exports) {
+
+	module.exports = require("lru-memoizer");
+
+/***/ },
+/* 18 */
 /***/ function(module, exports, __webpack_require__) {
 
-	var AWS = __webpack_require__(22);
-	var _ = __webpack_require__(23);
-	var util = __webpack_require__(24);
-	var winston = __webpack_require__(4);
-	var CircularJSON = __webpack_require__(25);
-	var backoff = __webpack_require__(26);
+	var AWS = __webpack_require__(19);
+	var _ = __webpack_require__(20);
+	var util = __webpack_require__(21);
+	var winston = __webpack_require__(1);
+	var CircularJSON = __webpack_require__(22);
+	var backoff = __webpack_require__(23);
 
 	var LIMITS = {
 	    EVENT_SIZE: 256000,
@@ -1673,25 +1329,25 @@ module.exports =
 
 
 /***/ },
-/* 22 */
+/* 19 */
 /***/ function(module, exports) {
 
 	module.exports = require("aws-sdk");
 
 /***/ },
-/* 23 */
+/* 20 */
 /***/ function(module, exports) {
 
 	module.exports = require(undefined);
 
 /***/ },
-/* 24 */
+/* 21 */
 /***/ function(module, exports) {
 
 	module.exports = require("util");
 
 /***/ },
-/* 25 */
+/* 22 */
 /***/ function(module, exports) {
 
 	/*!
@@ -1881,16 +1537,16 @@ module.exports =
 	this.parse = parseRecursion;
 
 /***/ },
-/* 26 */
+/* 23 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var Backoff = __webpack_require__(27);
-	var ExponentialBackoffStrategy = __webpack_require__(32);
-	var FibonacciBackoffStrategy = __webpack_require__(34);
-	var FunctionCall = __webpack_require__(35);
+	var Backoff = __webpack_require__(24);
+	var ExponentialBackoffStrategy = __webpack_require__(29);
+	var FibonacciBackoffStrategy = __webpack_require__(31);
+	var FunctionCall = __webpack_require__(32);
 
 	module.exports.Backoff = Backoff;
 	module.exports.FunctionCall = FunctionCall;
@@ -1918,15 +1574,15 @@ module.exports =
 
 
 /***/ },
-/* 27 */
+/* 24 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var events = __webpack_require__(28);
-	var precond = __webpack_require__(29);
-	var util = __webpack_require__(24);
+	var events = __webpack_require__(25);
+	var precond = __webpack_require__(26);
+	var util = __webpack_require__(21);
 
 	// A class to hold the state of a backoff operation. Accepts a backoff strategy
 	// to generate the backoff delays.
@@ -1989,13 +1645,13 @@ module.exports =
 
 
 /***/ },
-/* 28 */
+/* 25 */
 /***/ function(module, exports) {
 
 	module.exports = require("events");
 
 /***/ },
-/* 29 */
+/* 26 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*
@@ -2003,10 +1659,10 @@ module.exports =
 	 * Licensed under the MIT license.
 	 */
 
-	module.exports = __webpack_require__(30);
+	module.exports = __webpack_require__(27);
 
 /***/ },
-/* 30 */
+/* 27 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*
@@ -2014,9 +1670,9 @@ module.exports =
 	 * Licensed under the MIT license.
 	 */
 
-	var util = __webpack_require__(24);
+	var util = __webpack_require__(21);
 
-	var errors = module.exports = __webpack_require__(31);
+	var errors = module.exports = __webpack_require__(28);
 
 	function failCheck(ExceptionConstructor, callee, messageFormat, formatArgs) {
 	    messageFormat = messageFormat || '';
@@ -2106,7 +1762,7 @@ module.exports =
 
 
 /***/ },
-/* 31 */
+/* 28 */
 /***/ function(module, exports, __webpack_require__) {
 
 	/*
@@ -2114,7 +1770,7 @@ module.exports =
 	 * Licensed under the MIT license.
 	 */
 
-	var util = __webpack_require__(24);
+	var util = __webpack_require__(21);
 
 	function IllegalArgumentError(message) {
 	    Error.call(this, message);
@@ -2136,16 +1792,16 @@ module.exports =
 	module.exports.IllegalArgumentError = IllegalArgumentError;
 
 /***/ },
-/* 32 */
+/* 29 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var util = __webpack_require__(24);
-	var precond = __webpack_require__(29);
+	var util = __webpack_require__(21);
+	var precond = __webpack_require__(26);
 
-	var BackoffStrategy = __webpack_require__(33);
+	var BackoffStrategy = __webpack_require__(30);
 
 	// Exponential backoff strategy.
 	function ExponentialBackoffStrategy(options) {
@@ -2183,14 +1839,14 @@ module.exports =
 
 
 /***/ },
-/* 33 */
+/* 30 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var events = __webpack_require__(28);
-	var util = __webpack_require__(24);
+	var events = __webpack_require__(25);
+	var util = __webpack_require__(21);
 
 	function isDef(value) {
 	    return value !== undefined && value !== null;
@@ -2269,15 +1925,15 @@ module.exports =
 
 
 /***/ },
-/* 34 */
+/* 31 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var util = __webpack_require__(24);
+	var util = __webpack_require__(21);
 
-	var BackoffStrategy = __webpack_require__(33);
+	var BackoffStrategy = __webpack_require__(30);
 
 	// Fibonacci backoff strategy.
 	function FibonacciBackoffStrategy(options) {
@@ -2303,18 +1959,18 @@ module.exports =
 
 
 /***/ },
-/* 35 */
+/* 32 */
 /***/ function(module, exports, __webpack_require__) {
 
 	//      Copyright (c) 2012 Mathieu Turcotte
 	//      Licensed under the MIT license.
 
-	var events = __webpack_require__(28);
-	var precond = __webpack_require__(29);
-	var util = __webpack_require__(24);
+	var events = __webpack_require__(25);
+	var precond = __webpack_require__(26);
+	var util = __webpack_require__(21);
 
-	var Backoff = __webpack_require__(27);
-	var FibonacciBackoffStrategy = __webpack_require__(34);
+	var Backoff = __webpack_require__(24);
+	var FibonacciBackoffStrategy = __webpack_require__(31);
 
 	// Wraps a function to be called in a backoff loop.
 	function FunctionCall(fn, args, callback) {
