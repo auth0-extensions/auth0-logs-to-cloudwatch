@@ -14,7 +14,7 @@ const winstCwatch = require('winston-cloudwatch-transport');
 
 function lastLogCheckpoint(req, res) {
   let ctx = req.webtaskContext;
-  let required_settings = ['AUTH0_DOMAIN', 'AUTH0_GLOBAL_CLIENT_ID', 'AUTH0_GLOBAL_CLIENT_SECRET'];
+  let required_settings = ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET'];
   let missing_settings = required_settings.filter((setting) => !ctx.data[setting]);
 
   if (missing_settings.length) {
@@ -44,7 +44,7 @@ function lastLogCheckpoint(req, res) {
           console.log(`Logs from: ${context.checkpointId || 'Start'}.`);
 
           let take = Number.parseInt(ctx.data.BATCH_SIZE);
-
+          console.log(take);
           take = take > 100 ? 100 : take;
 
           context.logs = context.logs || [];
@@ -357,6 +357,7 @@ function getLogsFromAuth0 (domain, token, take, from, cb) {
       console.log('Error getting logs', err);
       cb(null, err);
     } else {
+      console.log(body);
       cb(body);
     }
   });

@@ -66,7 +66,7 @@ module.exports =
 
 	function lastLogCheckpoint(req, res) {
 	  var ctx = req.webtaskContext;
-	  var required_settings = ['AUTH0_DOMAIN', 'AUTH0_GLOBAL_CLIENT_ID', 'AUTH0_GLOBAL_CLIENT_SECRET'];
+	  var required_settings = ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET'];
 	  var missing_settings = required_settings.filter(function (setting) {
 	    return !ctx.data[setting];
 	  });
@@ -95,7 +95,7 @@ module.exports =
 	        console.log("Logs from: " + (context.checkpointId || 'Start') + ".");
 
 	        var take = Number.parseInt(ctx.data.BATCH_SIZE);
-
+	        console.log(take);
 	        take = take > 100 ? 100 : take;
 
 	        context.logs = context.logs || [];
@@ -398,6 +398,7 @@ module.exports =
 	      console.log('Error getting logs', err);
 	      cb(null, err);
 	    } else {
+	      console.log(body);
 	      cb(body);
 	    }
 	  });
