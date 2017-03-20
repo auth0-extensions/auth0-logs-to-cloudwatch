@@ -5,7 +5,7 @@
   "author": "auth0",
   "description": "This extension will take all of your Auth0 logs and export them to CloudWatch",
   "type": "cron",
-  "repository": "https://github.com/auth0/auth0-logs-to-cloudwatch",
+  "repository": "https://github.com/pushpabrol/auth0-logs-cloudwatch",
   "keywords": [
     "auth0",
     "extension"
@@ -18,18 +18,6 @@
     "BATCH_SIZE": {
       "description": "The ammount of logs to be read on each execution. Maximun is 100.",
       "default": 100
-    },
-    "PAPERTRAIL_HOST": {
-      "description": "Papertrail Host",
-      "required": true
-    },
-    "PAPERTRAIL_PORT": {
-      "description": "Papertrail Port",
-      "required": true
-    },
-    "PAPERTRAIL_SYSTEM": {
-      "description": "Papertrail System",
-      "default": "auth0-logs"
     },
     "LOG_LEVEL": {
       "description": "This allows you to specify the log level of events that need to be sent",
