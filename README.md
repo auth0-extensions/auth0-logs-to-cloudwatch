@@ -2,7 +2,7 @@
 
 [![Auth0 Extensions](http://cdn.auth0.com/extensions/assets/badge.svg)](https://sandbox.it.auth0.com/api/run/auth0-extensions/extensions-badge?webtask_no_cache=1)
 
-This extension will take all of your Auth0 logs and export them to Papertrail.
+This extension will take all of your Auth0 logs and export them to CloudWatch.
 
 ## Configure Webtask
 
@@ -22,14 +22,12 @@ To run it on a schedule (run every 5 minutes for example):
 ```bash
 $ npm run build
 $ wt cron schedule \
-    --name auth0-logs-to-papertrail \
+    --name auth0-logs-to-cloudwatch \
     --secret AUTH0_DOMAIN="YOUR_AUTH0_DOMAIN" \
     --secret AUTH0_GLOBAL_CLIENT_ID="YOUR_AUTH0_GLOBAL_CLIENT_ID" \
     --secret AUTH0_GLOBAL_CLIENT_SECRET="YOUR_AUTH0_GLOBAL_CLIENT_SECRET" \
     --secret LOG_LEVEL="1" \
     --secret LOG_TYPES="s,f" \
-    --secret PAPERTRAIL_HOST="PAPERTRAIL_HOST" \
-    --secret PAPERTRAIL_PORT="PAPERTRAIL_PORT" \
     "*/5 * * * *" \
     build/bundle.js
 ```
@@ -44,7 +42,7 @@ The following settings are optional:
 
 ## Usage
 
-Go to [Papertrail](https://www.papertrail.com) account to inspect logs
+Go to [CoudWatch] to inspect logs
 
 ## Filters
 
