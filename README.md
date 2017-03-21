@@ -13,32 +13,19 @@ npm i -g wt-cli
 wt init
 ```
 
-> Requires at least node 4.2.2 - if you're running multiple version of node make sure to load the right version, e.g. "nvm use 4.2.2"
 
 ## Deploy to Webtask.io
 
 To run it on a schedule (run every 5 minutes for example):
 
 ```bash
-$ npm run build
-$ wt cron schedule \
-    --name auth0-logs-to-cloudwatch \
-    --secret AUTH0_DOMAIN="YOUR_AUTH0_DOMAIN" \
-    --secret AUTH0_GLOBAL_CLIENT_ID="YOUR_AUTH0_GLOBAL_CLIENT_ID" \
-    --secret AUTH0_GLOBAL_CLIENT_SECRET="YOUR_AUTH0_GLOBAL_CLIENT_SECRET" \
-    --secret LOG_LEVEL="1" \
-    --secret LOG_TYPES="s,f" \
-    "*/5 * * * *" \
-    build/bundle.js
+wt cron schedule --profile "wt_profile" --name auth0-logs-2-cloudwatch 
+--secret AUTH0_DOMAIN="x.au/eu.auth0.com" --secret AUTH0_CLIENT_ID="client_id with read logs permissions on API V2" --secret AUTH0_CLIENT_SECRET="<client_secret>" --secret LOG_LEVEL="0,1,2,3,4" --secret LOG_TYPES="s,seacft,feacft,f,w,du,fu,fp,fc,fco,con,coff,fcpro,ss,fs,cs,cls,sv,fv,scp,fcp,sce,fce,scu,fcu,scpn,fcpn,svr,fvr,scpr,fcpr,fn,limit_wc,limit_ui,api_limit,sdu,fdu" --secret CLOUDWATCH_LOG_GROUP_NAME="logGroupName" --secret CLOUDWATCH_LOG_STREAM_NAME="logStreamName" --secret AWS_ACCESS_KEY_ID="aws_access_key" --secret AWS_SECRET_KEY="aws_secret_key" --secret AWS_REGION="<aws_region>" --secret BATCH_SIZE=100 "*/5 * * * *" index.js
 ```
 
 
-The following settings are optional:
+> To get a client_id and secret use the client credentials ssetup and grant a client "read:logs" scope on API V2 and you can use that Client Id/Secret for AUTH0_CLIENT_ID && AUTH0_CLIENT_SECRET
 
- - `LOG_LEVEL`: This allows you to specify the log level of events that need to be sent.
- - `LOG_TYPES`: If you only want to send events with a specific type (eg: failed logins). This needs to be a comma separated list.
-
-> You can get your Global Client Id/Secret here: https://auth0.com/docs/api/v2
 
 ## Usage
 
