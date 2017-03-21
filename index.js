@@ -1,5 +1,3 @@
-"use npm";
-"use strict";
 const winston = require('winston');
 const async = require('async');
 const moment = require('moment');
@@ -9,7 +7,6 @@ const Webtask = require('webtask-tools');
 const app = express();
 const Request = require('request');
 const memoizer = require('lru-memoizer');
-
 const winstCwatch = require('winston-cloudwatch-transport');
 
 function lastLogCheckpoint(req, res) {

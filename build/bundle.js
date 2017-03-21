@@ -45,8 +45,7 @@ module.exports =
 /* 0 */
 /***/ function(module, exports, __webpack_require__) {
 
-	"use npm";
-	"use strict";
+	'use strict';
 
 	var _logTypes;
 
@@ -61,7 +60,6 @@ module.exports =
 	var app = express();
 	var Request = __webpack_require__(16);
 	var memoizer = __webpack_require__(17);
-
 	var winstCwatch = __webpack_require__(18);
 
 	function lastLogCheckpoint(req, res) {
@@ -92,7 +90,7 @@ module.exports =
 	    // Start the process.
 	    async.waterfall([function (callback) {
 	      var getLogs = function getLogs(context) {
-	        console.log("Logs from: " + (context.checkpointId || 'Start') + ".");
+	        console.log('Logs from: ' + (context.checkpointId || 'Start') + '.');
 
 	        var take = Number.parseInt(ctx.data.BATCH_SIZE);
 	        console.log(take);
@@ -113,7 +111,7 @@ module.exports =
 	            context.checkpointId = context.logs[context.logs.length - 1]._id;
 	          }
 
-	          console.log("Total logs: " + context.logs.length + ".");
+	          console.log('Total logs: ' + context.logs.length + '.');
 	          return callback(null, context);
 	        });
 	      };
@@ -144,8 +142,8 @@ module.exports =
 
 	      async.eachLimit(context.logs, 5, function (log, cb) {
 	        var date = moment(log.date);
-	        var url = date.format('YYYY/MM/DD') + "/" + date.format('HH') + "/" + log._id + ".json";
-	        console.log("Uploading " + url + ".");
+	        var url = date.format('YYYY/MM/DD') + '/' + date.format('HH') + '/' + log._id + '.json';
+	        console.log('Uploading ' + url + '.');
 
 	        // papertrail here...
 	        logger.info(JSON.stringify(log), cb);
@@ -353,10 +351,10 @@ module.exports =
 	    event: 'Failed User Deletion',
 	    level: 3 // Error
 	  }
-	}, _defineProperty(_logTypes, "fapi", {
+	}, _defineProperty(_logTypes, 'fapi', {
 	  event: 'Failed API Operation',
 	  level: 3 // Error
-	}), _defineProperty(_logTypes, "limit_wc", {
+	}), _defineProperty(_logTypes, 'limit_wc', {
 	  event: 'Blocked Account',
 	  level: 3 // Error
 	}), _defineProperty(_logTypes, 'limit_mu', {
@@ -377,7 +375,7 @@ module.exports =
 	}), _logTypes);
 
 	function getLogsFromAuth0(domain, token, take, from, cb) {
-	  var url = "https://" + domain + "/api/v2/logs";
+	  var url = 'https://' + domain + '/api/v2/logs';
 
 	  Request({
 	    method: 'GET',
@@ -390,7 +388,7 @@ module.exports =
 	      per_page: take
 	    },
 	    headers: {
-	      Authorization: "Bearer " + token,
+	      Authorization: 'Bearer ' + token,
 	      Accept: 'application/json'
 	    }
 	  }, function (err, res, body) {
@@ -432,8 +430,8 @@ module.exports =
 	});
 
 	app.use(function (req, res, next) {
-	  var apiUrl = "https://" + req.webtaskContext.data.AUTH0_DOMAIN + "/oauth/token";
-	  var audience = "https://" + req.webtaskContext.data.AUTH0_DOMAIN + "/api/v2/";
+	  var apiUrl = 'https://' + req.webtaskContext.data.AUTH0_DOMAIN + '/oauth/token';
+	  var audience = 'https://' + req.webtaskContext.data.AUTH0_DOMAIN + '/api/v2/';
 	  var clientId = req.webtaskContext.data.AUTH0_CLIENT_ID;
 	  var clientSecret = req.webtaskContext.data.AUTH0_CLIENT_SECRET;
 
@@ -1339,7 +1337,7 @@ module.exports =
 /* 20 */
 /***/ function(module, exports) {
 
-	module.exports = require(undefined);
+	module.exports = require("lodash");
 
 /***/ },
 /* 21 */
