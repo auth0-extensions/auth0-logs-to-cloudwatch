@@ -1,5 +1,5 @@
-"use npm"
-"use strict"
+"use npm";
+"use strict";
 const winston = require('winston');
 const async = require('async');
 const moment = require('moment');
@@ -14,7 +14,7 @@ const winstCwatch = require('winston-cloudwatch-transport');
 
 function lastLogCheckpoint(req, res) {
   let ctx = req.webtaskContext;
-  let required_settings = ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET'];
+  let required_settings = ['AUTH0_DOMAIN', 'AUTH0_CLIENT_ID', 'AUTH0_CLIENT_SECRET','CLOUDWATCH_LOG_GROUP_NAME','CLOUDWATCH_LOG_STREAM_NAME', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_KEY','AWS_REGION', 'BATCH_SIZE'];
   let missing_settings = required_settings.filter((setting) => !ctx.data[setting]);
 
   if (missing_settings.length) {
@@ -28,11 +28,11 @@ function lastLogCheckpoint(req, res) {
     const logger = new winston.Logger({
       transports: [
               new winstCwatch({
-    logGroupName: "auth0-pushp",
-    logStreamName: "auth0-pushp-stream",
-    awsAccessKeyId:"AKIAI2NS6FD5W7AL2EOQ",
-    awsSecretKey:"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",
-    awsRegion:"us-east-1"
+    logGroupName: ctx.data.CLOUDWATCH_LOG_GROUP_NAME,
+    logStreamName: ctx.data.CLOUDWATCH_LOG_STREAM_NAME,
+    awsAccessKeyId:ctx.data.AWS_ACCESS_KEY_ID,
+    awsSecretKey:ctx.data.AWS_SECRET_KEY,
+    awsRegion:ctx.data.AWS_REGION
     })
       ]
     });
@@ -75,7 +75,7 @@ function lastLogCheckpoint(req, res) {
           }
           return true;
         };
-
+        console.log(ctx.data);
         const types_filter = (ctx.data.LOG_TYPES && ctx.data.LOG_TYPES.split(',')) || [];
         const log_matches_types = (log) => {
           if (!types_filter || !types_filter.length) return true;
