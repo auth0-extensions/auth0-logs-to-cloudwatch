@@ -5,6 +5,7 @@
   "author": "auth0",
   "description": "This extension will take all of your Auth0 logs and export them to CloudWatch",
   "type": "cron",
+  "logoUrl": "https://truesightpulse.bmc.com/wp-content/uploads/2016/11/cloudwatch.png",
   "repository": "https://github.com/pushpabrol/auth0-logs-cloudwatch",
   "keywords": [
     "auth0",
