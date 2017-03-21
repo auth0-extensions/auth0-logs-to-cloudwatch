@@ -26,7 +26,8 @@
     "lodash": "~3.10.1",
     "winston": "^2.2.0",
     "winston-cloudwatch-transport": "^1.0.8",
-    "request": "^2.56.0"
+    "request": "^2.56.0",
+    "json-loader": "^0.5.4"
 
   },
   "devDependencies": {

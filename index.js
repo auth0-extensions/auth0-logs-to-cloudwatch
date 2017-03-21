@@ -8,6 +8,8 @@ const app = express();
 const Request = require('request');
 const memoizer = require('lru-memoizer');
 const winstCwatch = require('winston-cloudwatch-transport');
+var metadata = require('./webtask.json');
+
 
 function lastLogCheckpoint(req, res) {
   let ctx = req.webtaskContext;
@@ -404,6 +406,11 @@ app.use(function (req, res, next) {
 
 app.get('/', lastLogCheckpoint);
 app.post('/', lastLogCheckpoint);
+
+app.get('/meta', function(req, res) {
+  res.status(200).send(metadata);
+});
+
 
 module.exports = Webtask.fromExpress(app);
 

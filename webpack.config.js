@@ -2,7 +2,7 @@ var Path          = require('path');
 var Request       = require('sync-request');
 var Webpack       = require('webpack');
 var _             = require('lodash');
-var pkg           = require('./package.json');
+var pkg           = require('./webtask.json');
 var WebpackOnBuildPlugin = require('on-build-webpack');
 var fs  = require('fs');
 
@@ -31,8 +31,7 @@ module.exports = {
         }
       },
       {
-        test: /\.json?$/,
-        loader: 'json'
+        test: /\.json$/, loader: "json"
       }
     ]
   },
