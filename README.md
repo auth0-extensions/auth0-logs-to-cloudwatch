@@ -19,8 +19,14 @@ wt init
 To run it on a schedule (run every 5 minutes for example):
 
 ```bash
-wt cron schedule --profile "wt_profile" --name auth0-logs-2-cloudwatch 
---secret AUTH0_DOMAIN="x.au/eu.auth0.com" --secret AUTH0_CLIENT_ID="client_id with read logs permissions on API V2" --secret AUTH0_CLIENT_SECRET="<client_secret>" --secret LOG_LEVEL="0,1,2,3,4" --secret LOG_TYPES="s,seacft,feacft,f,w,du,fu,fp,fc,fco,con,coff,fcpro,ss,fs,cs,cls,sv,fv,scp,fcp,sce,fce,scu,fcu,scpn,fcpn,svr,fvr,scpr,fcpr,fn,limit_wc,limit_ui,api_limit,sdu,fdu" --secret CLOUDWATCH_LOG_GROUP_NAME="logGroupName" --secret CLOUDWATCH_LOG_STREAM_NAME="logStreamName" --secret AWS_ACCESS_KEY_ID="aws_access_key" --secret AWS_SECRET_KEY="aws_secret_key" --secret AWS_REGION="<aws_region>" --secret BATCH_SIZE=100 "*/5 * * * *" index.js
+wt cron schedule --profile "wt_profile" --name auth0-logs-2-cloudwatch \
+--secret AUTH0_DOMAIN="x.au/eu.auth0.com" \
+--secret AUTH0_CLIENT_ID="client_id with read logs permissions on API V2" \
+--secret AUTH0_CLIENT_SECRET="<client_secret>" --secret LOG_LEVEL="0,1,2,3,4" \
+--secret LOG_TYPES="s,seacft,feacft,f,w,du,fu,fp,fc,fco,con,coff,fcpro,ss,fs,cs,cls,sv,fv,scp,fcp,sce,fce,scu,fcu,scpn,fcpn,svr,fvr,scpr,fcpr,fn,limit_wc,limit_ui,api_limit,sdu,fdu" \
+--secret CLOUDWATCH_LOG_GROUP_NAME="logGroupName" --secret CLOUDWATCH_LOG_STREAM_NAME="logStreamName" \
+--secret AWS_ACCESS_KEY_ID="aws_access_key" --secret AWS_SECRET_KEY="aws_secret_key" \
+--secret AWS_REGION="<aws_region>" --secret BATCH_SIZE=100 "*/5 * * * *" index.js
 ```
 
 
