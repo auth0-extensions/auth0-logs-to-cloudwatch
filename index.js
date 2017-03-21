@@ -8,7 +8,7 @@ const app = express();
 const Request = require('request');
 const memoizer = require('lru-memoizer');
 const winstCwatch = require('winston-cloudwatch-transport');
-var metadata = require('./webtask.json');
+const metadata = require('./webtask.json');
 
 
 function lastLogCheckpoint(req, res) {
