@@ -1,9 +1,5 @@
 # Auth0 - Logs to AWS Cloudwatch Logs
 
-[![Auth0 Extensions](http://cdn.auth0.com/extensions/assets/badge.svg)](https://sandbox.it.auth0.com/api/run/auth0-extensions/extensions-badge?webtask_no_cache=1)
-
-This extension will take all of your Auth0 logs and export them to CloudWatch.
-
 ## Configure Webtask
 
 If you haven't configured Webtask on your machine run this first:
@@ -15,6 +11,13 @@ wt init
 
 
 ## Deploy to Webtask.io
+
+
+Pre reqs:
+
+> To get a client_id and secret use the client credentials setup and grant a client "read:logs" scope on API V2 and you can use that Client Id/Secret for AUTH0_CLIENT_ID && AUTH0_CLIENT_SECRET in the script below.
+> You will need to create a cloud watch log group and log group stream and use the values for CLOUDWATCH_LOG_GROUP_NAME and CLOUDWATCH_LOG_STREAM_NAME
+> Get the AWS Access, Secret Key and Region for AWS_ACCESS_KEY_ID, AWS_SECRET_KEY, AWS_REGION
 
 To run it on a schedule (run every 5 minutes for example):
 
@@ -30,7 +33,7 @@ wt cron schedule --profile "wt_profile" --name auth0-logs-2-cloudwatch \
 ```
 
 
-> To get a client_id and secret use the client credentials ssetup and grant a client "read:logs" scope on API V2 and you can use that Client Id/Secret for AUTH0_CLIENT_ID && AUTH0_CLIENT_SECRET
+
 
 
 ## Usage
