@@ -1,5 +1,7 @@
 # Auth0 - Logs to AWS Cloudwatch Logs
 
+## Install Extension
+
 This extension will take all of your Auth0 logs and export them to CloudWatch. to install go to your management dashboard - https://manage.auth0.com/#/extensions and click on Create Extension and enter the url for this github repo.
 
 
