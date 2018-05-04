@@ -5,14 +5,14 @@
   "main": "index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pushpabrol/auth0-logs-cloudwatch.git"
+    "url": "git+https://github.com/auth0-extensions/auth0-logs-to-cloudwatch.git"
   },
   "author": "pushp.abrol@auth0.com",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/pushpabrol/auth0-logs-cloudwatch.git/issues"
+    "url": "https://github.com/auth0-extensions/auth0-logs-to-cloudwatch.git/issues"
   },
-  "homepage": "https://github.com/pushpabrol/auth0-logs-cloudwatch.git#readme",
+  "homepage": "https://github.com/auth0-extensions/auth0-logs-to-cloudwatch.git#readme",
   "scripts": {
     "build": "npm run clean && npm run client:build && npm run extension:build",
     "clean": "rimraf dist",
